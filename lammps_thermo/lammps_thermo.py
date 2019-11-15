@@ -4,6 +4,8 @@
 # 2019 Nov 15
 
 import numpy as np
+import pickle
+import h5py
 import time
 
 class LAMMPSThermo:
@@ -15,10 +17,28 @@ class LAMMPSThermo:
             skip_sections=0,incomplete=False):
         """Create the LAMMPSThermo object
 
+        Thermo data can be read from a LAMMPS log file or a pickle
+        or HDF5 file which contains a previously created LAMMPSThermo
+        object.
+
+        Parsing a LAMMPS logfile: 'start_keyword' specifies the first
+        word on the header line prior to the start of the thermo data.
+        If there are multiple sections of thermo data (i.e., from multiple
+        simulations performed within a single input script) in the logfile,
+        the 'skip_sections' parameter can be used to skip N sections of thermo
+        data. This parameter can also be used if the 'start_keyword' appears
+        as the first word on a line(s) of the logfile prior to the actual
+        thermo data section. The 'incomplete' parameter should be set to true
+        if the simulation has not completed by the end of the logfile --
+        i.e., the final line of the log file is still thermo data.
+
         Parameters
         ----------
-        filename : string 
-            Name of the LAMMPS logfile
+        filename : string
+            Name of the file to read. Normally a LAMMPS logfile
+            but could be a pickle (.pickle,.pkl) or hdf5
+            (.hdf5,.hf5,.hdf) file containing a previously created
+            LAMMPSThermo object
         start_keyword  : string, optional
             First word on the header line before the
             thermo data of interest
@@ -28,19 +48,35 @@ class LAMMPSThermo:
         skip_sections : int, optional
             Number of sections of thermo data
             to skip before reading in data
+        incomplete : boolean, optional
+            Set to True if the log file ends before the
+            LAMMPS simulation completed -- i.e., the last
+            line of the log file is still thermo data
 
-        Returns:
-        --------
-        thermo_data : LAMMPSThermo
-            Structure with thermo data extracted
-            from lammps log file
+        Attributes
+        ----------
+        header_map : Dict
+            Dictionary that maps between the header name
+            (i.e., from the lammps 'thermo_style' command
+            and the column number
+        data : np.ndarray
+            The thermo data
+        filename : the filename where the data was read from
 
         """
 
         self.filename = filename
 
-        self.header_map, self.data = self._read_thermo_data(
-                start_keyword,end_keyword,skip_sections,incomplete)
+        hdf5_extensions = ['.hdf5','.hf5','.hdf']
+        pickle_extensions = ['.pickle','.pkl']
+
+        if self.filename.endswith(tuple(pickle_extensions)):
+            self.header_map, self.data = self._load_pickle()
+        elif self.filename.endswith(tuple(hdf5_extensions)):
+            self.header_map, self.data = self._load_hdf5()
+        else:
+            self.header_map, self.data = self._read_lammps_log(
+                    start_keyword,end_keyword,skip_sections,incomplete)
 
     def extract_props(self,props):
         """Extracts the desired property
@@ -48,7 +84,7 @@ class LAMMPSThermo:
         Parameters
         ----------
         props : string or list
-            Name (or list of names) of thermo property(ies) to extract. 
+            Name (or list of names) of thermo property(ies) to extract.
             This (these) should match the keywords used in the lammps
             'thermo_style' command.
 
@@ -80,9 +116,40 @@ class LAMMPSThermo:
     def available_props(self):
         return list(self.header_map.keys())
 
-    def _read_thermo_data(self,start_keyword,end_keyword,
+    def save_pickle(self,outname):
+        with open(outname,'wb') as pf:
+            pickle.dump(self,pf)
+
+    # TODO: Write error handling for bad pickle file
+    def _load_pickle(self):
+        with open(self.filename,'rb') as pf:
+            old = pickle.load(pf)
+        return old.header_map, old.data
+
+    def save_hdf5(self,outname):
+        with h5py.File(outname,'w') as h5f:
+            dataset = h5f.create_dataset('lammps_thermo',data=self.data)
+            for key,val in self.header_map.items():
+                dataset.attrs[key] = val
+
+    # TODO: Write error handling for incorrectly formatted hdf5
+    def _load_hdf5(self):
+        with h5py.File(self.filename,'r') as h5f:
+            dataset = h5f['lammps_thermo']
+            data = dataset[:]
+            header_map = {}
+            for header,col in dataset.attrs.items():
+                header_map[header] = col
+
+        assert len(header_map) == data.shape[1],\
+                "Mismatch between number of columns in the dataset "\
+                "and the number of key-value pairs as dataset attributes."
+
+        return header_map, data
+
+    def _read_lammps_log(self,start_keyword,end_keyword,
             skip_sections,incomplete):
-        """Reads filename and extracts thermo information
+        """Reads a lammps logfile and extracts thermo information
 
         Parameters
         ----------
@@ -137,7 +204,7 @@ class LAMMPSThermo:
 
         n_lines = end_idx - start_idx
         assert n_lines > 0
-        
+
         # Extract column headers and create dictionary to map
         # thermo property name to column index
         col_headers = log_data[start_idx]
