@@ -42,25 +42,43 @@ class LAMMPSThermo:
         self.header_map, self.data = self._read_thermo_data(
                 start_keyword,end_keyword,skip_sections,incomplete)
 
-    def extract_property(self,prop):
+    def extract_props(self,props):
         """Extracts the desired property
 
         Parameters
         ----------
-        prop : string
-            Name of thermo property to extract. This should match
-            the keywords used in the lammps 'thermo_style' command.
+        props : string or list
+            Name (or list of names) of thermo property(ies) to extract. 
+            This (these) should match the keywords used in the lammps
+            'thermo_style' command.
 
         Returns:
         --------
-        property_data : np.ndarray
+        requested_props : np.ndarray, shape=(self.data.shape[0],len(props))
 
         """
 
-        if prop not in self.header_map.keys():
-            raise ValueError("Selected property does not exist in the"
-                    "LAMMPSThermo object. Available choices are: "
-                    "{}".format(self.header_map.keys()))
+        if isinstance(props,str):
+            props = [props]
+        elif not isinstance(props,list):
+            raise ValueError("props must be a string (single property) or "
+                    "a list of strings (multiple properties)")
+
+        for prop in props:
+            if prop not in self.header_map.keys():
+                raise ValueError("Selected property {} does not exist in the "
+                        "LAMMPSThermo object. Available choices are: "
+                        "{}".format(prop,self.header_map.keys()))
+
+        requested_props = np.empty(shape=(self.data.shape[0],0))
+        for prop in props:
+            add_prop = self.data[:,self.header_map[prop]].reshape(-1,1)
+            requested_props = np.hstack((requested_props,add_prop))
+
+        return requested_props
+
+    def available_props(self):
+        return list(self.header_map.keys())
 
     def _read_thermo_data(self,start_keyword,end_keyword,
             skip_sections,incomplete):
