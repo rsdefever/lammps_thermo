@@ -1,0 +1,6 @@
+include LICENSE
+include MANIFEST.in
+include versioneer.py
+
+graft lammps_thermo
+global-exclude *.py[cod] __pycache__ *.so
