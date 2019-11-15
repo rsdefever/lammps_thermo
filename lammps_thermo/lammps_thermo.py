@@ -14,7 +14,7 @@ class LAMMPSThermo:
     """
 
     def __init__(self,filename,start_keyword='Step',end_keyword='Loop',
-            skip_sections=0,incomplete=False):
+            skip_sections=0):
         """Create the LAMMPSThermo object
 
         Thermo data can be read from a LAMMPS log file or a pickle
@@ -28,7 +28,7 @@ class LAMMPSThermo:
         the 'skip_sections' parameter can be used to skip N sections of thermo
         data. This parameter can also be used if the 'start_keyword' appears
         as the first word on a line(s) of the logfile prior to the actual
-        thermo data section. The 'incomplete' parameter should be set to true
+        thermo data section. The 'end_keyword' parameter should be set to None
         if the simulation has not completed by the end of the logfile --
         i.e., the final line of the log file is still thermo data.
 
@@ -44,14 +44,13 @@ class LAMMPSThermo:
             thermo data of interest
         end_keyword : string, optional
             First word on the line following the
-            thermo data of interest
+            thermo data of interest. Set to None if the
+            LAMMPS simulation has not completed (or if the
+            last line of the log file is still thermo data
+            for any reason)
         skip_sections : int, optional
             Number of sections of thermo data
             to skip before reading in data
-        incomplete : boolean, optional
-            Set to True if the log file ends before the
-            LAMMPS simulation completed -- i.e., the last
-            line of the log file is still thermo data
 
         Attributes
         ----------
@@ -76,10 +75,10 @@ class LAMMPSThermo:
             self.header_map, self.data = self._load_hdf5()
         else:
             self.header_map, self.data = self._read_lammps_log(
-                    start_keyword,end_keyword,skip_sections,incomplete)
+                    start_keyword,end_keyword,skip_sections)
 
-    def extract_props(self,props):
-        """Extracts the desired property
+    def prop(self,props,tstart=None,tend=None):
+        """Extracts the desired property(ies)
 
         Parameters
         ----------
@@ -87,6 +86,10 @@ class LAMMPSThermo:
             Name (or list of names) of thermo property(ies) to extract.
             This (these) should match the keywords used in the lammps
             'thermo_style' command.
+        tstart : float, optional
+            Starting time to return thermo properties
+        tend : float, optional
+            Ending time to return thermo properties
 
         Returns:
         --------
@@ -100,18 +103,47 @@ class LAMMPSThermo:
             raise ValueError("props must be a string (single property) or "
                     "a list of strings (multiple properties)")
 
+        if tstart is not None or tend is not None:
+            if 'Time' not in self.header_map.keys():
+                raise ValueError("tstart and tend parameters only supported "
+                                 "if 'Time' data is present.")
+            if tstart is not None and tend is not None:
+                if tstart > tend:
+                    raise ValueError("tstart = {} is greater "
+                            "than tend = {}".format(tstart,tend))
         for prop in props:
             if prop not in self.header_map.keys():
                 raise ValueError("Selected property {} does not exist in the "
                         "LAMMPSThermo object. Available choices are: "
                         "{}".format(prop,self.header_map.keys()))
 
+        if tstart is not None:
+            try:
+                col = self.header_map['Time']
+                idx_start = np.where(self.data[:,col] >= tstart)[0][0]
+            except IndexError:
+                raise IndexError("tstart = {} appears to be greater than "
+                                 "any time. Check your choice and units"
+                                 .format(tstart))
+        else:
+            idx_start = None
+        if tend is not None:
+            try:
+                col = self.header_map['Time']
+                idx_end = np.where(self.data[:,col] <= tend)[0][-1] + 1
+            except IndexError:
+                raise IndexError("tend = {} appears to be less than "
+                                 "any time. Check your choice and units"
+                                 .format(tend))
+        else:
+            idx_end = None
+
         requested_props = np.empty(shape=(self.data.shape[0],0))
         for prop in props:
             add_prop = self.data[:,self.header_map[prop]].reshape(-1,1)
             requested_props = np.hstack((requested_props,add_prop))
 
-        return requested_props
+        return requested_props[idx_start:idx_end]
 
     def available_props(self):
         return list(self.header_map.keys())
@@ -148,7 +180,7 @@ class LAMMPSThermo:
         return header_map, data
 
     def _read_lammps_log(self,start_keyword,end_keyword,
-            skip_sections,incomplete):
+            skip_sections):
         """Reads a lammps logfile and extracts thermo information
 
         Parameters
@@ -179,10 +211,10 @@ class LAMMPSThermo:
                     if line_list[0] == start_keyword:
                         start_idx = i
                         found_sections += 1
-                    if line_list[0] == end_keyword:
+                    if line_list[0] == end_keyword and \
+                       found_sections > skip_sections:
                         end_idx = i
-                        if found_sections > skip_sections:
-                            break
+                        break
                 except IndexError:
                     continue
         end = time.time()
@@ -193,12 +225,14 @@ class LAMMPSThermo:
         except NameError:
             raise NameError('Keyword {} not found in LAMMPS log file'.format(
                 start_keyword))
-        if not incomplete:
+        if end_keyword is not None:
             try:
                 end_idx
             except NameError:
-                raise NameError('Ending keyword {} not found in'
-                        'LAMMPS log file'.format(end_keyword))
+                raise NameError("Ending keyword '{}' not found in "
+                        "LAMMPS log file. If the last line of the "
+                        "log file still contains thermo data use the "
+                        "'end_keyword=None' option".format(end_keyword))
         else:
             end_idx = i
 
