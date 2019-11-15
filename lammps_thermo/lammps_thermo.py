@@ -4,6 +4,7 @@
 # 2019 Nov 15
 
 import numpy as np
+import time
 
 class LAMMPSThermo:
     """Extract and manipulate thermodynamic information
@@ -11,7 +12,7 @@ class LAMMPSThermo:
     """
 
     def __init__(self,filename,start_keyword='Step',end_keyword='Loop',
-            skip_sections=0):
+            skip_sections=0,incomplete=False):
         """Create the LAMMPSThermo object
 
         Parameters
@@ -39,7 +40,7 @@ class LAMMPSThermo:
         self.filename = filename
 
         self.header_map, self.data = self._read_thermo_data(
-                start_keyword,end_keyword,skip_sections)
+                start_keyword,end_keyword,skip_sections,incomplete)
 
     def extract_property(self,prop):
         """Extracts the desired property
@@ -62,7 +63,7 @@ class LAMMPSThermo:
                     "{}".format(self.header_map.keys()))
 
     def _read_thermo_data(self,start_keyword,end_keyword,
-            skip_sections):
+            skip_sections,incomplete):
         """Reads filename and extracts thermo information
 
         Parameters
@@ -81,36 +82,40 @@ class LAMMPSThermo:
 
         """
 
+        print("Extracting LAMMPS thermo info from: {}".format(self.filename))
         log_data = []
+        found_sections = 0
+        start = time.time()
         with open(self.filename) as log_file:
             for i,line in enumerate(log_file):
-                log_data.append(line.strip().split())
-
-        # Extract the relevant thermo data
-        found_sections = 0
-        for i,line in enumerate(log_data):
-            try:
-                if line[0] == start_keyword:
-                    start_idx = i
-                    found_sections += 1
-                if line[0] == end_keyword:
-                    end_idx = i
-                    if found_sections > skip_sections:
-                        break
-            except IndexError:
-                continue
-
+                line_list = line.strip().split()
+                log_data.append(line_list)
+                try:
+                    if line_list[0] == start_keyword:
+                        start_idx = i
+                        found_sections += 1
+                    if line_list[0] == end_keyword:
+                        end_idx = i
+                        if found_sections > skip_sections:
+                            break
+                except IndexError:
+                    continue
+        end = time.time()
+        print("Time to scan file: {}, {} lines/sec".format(end-start,len(log_data)/(end-start)))
         # Make sure we found starting and ending indices
         try:
             start_idx
         except NameError:
             raise NameError('Keyword {} not found in LAMMPS log file'.format(
-                keyword))
-        try:
-            end_idx
-        except NameError:
-            raise NameError('Ending keyword {} not found in'
-                    'LAMMPS log file'.format(end_keyword))
+                start_keyword))
+        if not incomplete:
+            try:
+                end_idx
+            except NameError:
+                raise NameError('Ending keyword {} not found in'
+                        'LAMMPS log file'.format(end_keyword))
+        else:
+            end_idx = i
 
         n_lines = end_idx - start_idx
         assert n_lines > 0
@@ -121,7 +126,10 @@ class LAMMPSThermo:
         col_map = { prop : i for i,prop in enumerate(col_headers) }
 
         # Extract data into numpy array
-        extracted_data = np.loadtxt(self.filename,skiprows=start_idx+1,max_rows=n_lines-1)
+        start = time.time()
+        extracted_data = np.asarray(log_data[start_idx+1:end_idx],dtype=np.float64)
+        end = time.time()
+        print("Time to load numpy array: {}".format(end-start))
 
         return col_map, extracted_data
 
