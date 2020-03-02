@@ -29,7 +29,7 @@ If the doc strings for the `LAMMPSThermo` class print, you are probably good to 
 LAMMPS thermo info is loaded from a LAMMPS log file:
 
     filename = PATH_TO_LOGFILE
-    thermo = lammps_thermo.LAMMPSThermo(filename)
+    thermo = lammps_thermo.load(filename)
 
 The thermo data is stored in a numpy array accessible
 via the `data` attribute:
