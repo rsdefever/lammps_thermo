@@ -8,6 +8,62 @@ import pickle
 import h5py
 import time
 
+def load(filename,start_keyword='Step',end_keyword='Loop',
+        skip_sections=0):
+    """Wrapper function around LAMMPSThermo class instantiation
+
+    Thermo data can be read from a LAMMPS log file or a pickle
+    or HDF5 file which contains a previously created LAMMPSThermo
+    object.
+
+    Parsing a LAMMPS logfile: 'start_keyword' specifies the first
+    word on the header line prior to the start of the thermo data.
+    If there are multiple sections of thermo data (i.e., from multiple
+    simulations performed within a single input script) in the logfile,
+    the 'skip_sections' parameter can be used to skip N sections of thermo
+    data. This parameter can also be used if the 'start_keyword' appears
+    as the first word on a line(s) of the logfile prior to the actual
+    thermo data section. The 'end_keyword' parameter should be set to None
+    if the simulation has not completed by the end of the logfile --
+    i.e., the final line of the log file is still thermo data.
+
+    Parameters
+    ----------
+    filename : string
+        Name of the file to read. Normally a LAMMPS logfile
+        but could be a pickle (.pickle,.pkl) or hdf5
+        (.hdf5,.hf5,.hdf) file containing a previously created
+        LAMMPSThermo object
+    start_keyword  : string, optional
+        First word on the header line before the
+        thermo data of interest
+    end_keyword : string, optional
+        First word on the line following the
+        thermo data of interest. Set to None if the
+        LAMMPS simulation has not completed (or if the
+        last line of the log file is still thermo data
+        for any reason)
+    skip_sections : int, optional
+        Number of sections of thermo data
+        to skip before reading in data
+
+    Attributes
+    ----------
+    header_map : Dict
+        Dictionary that maps between the header name
+        (i.e., from the lammps 'thermo_style' command
+        and the column number
+    data : np.ndarray
+        The thermo data
+    filename : the filename where the data was read from
+
+    """
+    thermo = LAMMPSThermo(filename,start_keyword,end_keyword,
+            skip_sections)
+
+    return thermo
+
+
 class LAMMPSThermo:
     """Extract and manipulate thermodynamic information
     from a LAMMPS log file
@@ -16,51 +72,6 @@ class LAMMPSThermo:
     def __init__(self,filename,start_keyword='Step',end_keyword='Loop',
             skip_sections=0):
         """Create the LAMMPSThermo object
-
-        Thermo data can be read from a LAMMPS log file or a pickle
-        or HDF5 file which contains a previously created LAMMPSThermo
-        object.
-
-        Parsing a LAMMPS logfile: 'start_keyword' specifies the first
-        word on the header line prior to the start of the thermo data.
-        If there are multiple sections of thermo data (i.e., from multiple
-        simulations performed within a single input script) in the logfile,
-        the 'skip_sections' parameter can be used to skip N sections of thermo
-        data. This parameter can also be used if the 'start_keyword' appears
-        as the first word on a line(s) of the logfile prior to the actual
-        thermo data section. The 'end_keyword' parameter should be set to None
-        if the simulation has not completed by the end of the logfile --
-        i.e., the final line of the log file is still thermo data.
-
-        Parameters
-        ----------
-        filename : string
-            Name of the file to read. Normally a LAMMPS logfile
-            but could be a pickle (.pickle,.pkl) or hdf5
-            (.hdf5,.hf5,.hdf) file containing a previously created
-            LAMMPSThermo object
-        start_keyword  : string, optional
-            First word on the header line before the
-            thermo data of interest
-        end_keyword : string, optional
-            First word on the line following the
-            thermo data of interest. Set to None if the
-            LAMMPS simulation has not completed (or if the
-            last line of the log file is still thermo data
-            for any reason)
-        skip_sections : int, optional
-            Number of sections of thermo data
-            to skip before reading in data
-
-        Attributes
-        ----------
-        header_map : Dict
-            Dictionary that maps between the header name
-            (i.e., from the lammps 'thermo_style' command
-            and the column number
-        data : np.ndarray
-            The thermo data
-        filename : the filename where the data was read from
 
         """
 
